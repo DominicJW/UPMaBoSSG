@@ -25,7 +25,11 @@ class driver;
 %code {
 #include "../driver.h"
 #include <algorithm>
+#define YYDEBUG 1
+
 }
+
+
 
 %define api.token.prefix {TOK_}
 %token
@@ -52,8 +56,13 @@ class driver;
   RBRACE  "}"
   DOT     "."
   SEMICOLON ";"
+  STARTP  "p["
+  ENDP   "]"
+  COMMA   ","
+
   CFG_START
   BND_START
+  UPP_START
 ;
 
 %token <std::string> IDENTIFIER 
@@ -61,12 +70,23 @@ class driver;
 %token <std::string> ALIAS 
 %token <float> FLOAT
 %token <int> NUMBER 
+
+
+%token <std::string> EXTERNALINPUT
+
+
 %nterm <expr_ptr> exp
 
 %nterm <node_attr_t> node_attribute
 %nterm <node_attr_list_t> node_body
 
+
+%nterm <std::vector<std::string>> nodes
+%nterm <std::vector<int>> states
+
+
 %printer { /* yyo << $$; */ } <*>;
+%debug
 
 %%
 %start program;
@@ -74,6 +94,7 @@ class driver;
 program:
   CFG_START cfg_program
 | BND_START bnd_program
+| UPP_START upp_program
 
 cfg_program:
   cfg_program cfg_declaration
@@ -83,6 +104,9 @@ bnd_program:
   bnd_program bnd_declaration
 | /* empty */
 
+upp_program:
+  upp_program upp_declaration
+| %empty
 
 cfg_declaration: 
   attr_declaration
@@ -120,7 +144,13 @@ node_body:
 | node_attribute                            { $$.push_back(std::move($1)); }
 
 node_attribute:
-  IDENTIFIER "=" exp ";"                    { $$ = std::make_pair(std::move($1), std::move($3)); }
+  IDENTIFIER "=" exp ";"                    { $$ = std::make_pair(std::move($1), std::move($3));}
+
+upp_declaration:
+  EXTERNALINPUT "=" exp ";"                 {drv.register_external_input(std::move($1),std::move($3));}     
+| IDENTIFIER "=" exp ";"                    {drv.register_constant(std::move($1),std::move($3));}
+| VARIABLE "=" exp ";"                      {drv.register_variable(std::move($1),std::move($3));}
+
 
 
 %right "?";
@@ -156,6 +186,17 @@ exp:
 | "-" exp %prec UMINUS                      { $$ = std::make_unique<unary_expression>(operation::MINUS, std::move($2)); }
 | "+" exp %prec UPLUS                       { $$ = std::make_unique<unary_expression>(operation::PLUS, std::move($2)); }
 | NOT exp                                   { $$ = std::make_unique<unary_expression>(operation::NOT, std::move($2)); }
+| STARTP "(" nodes ")" "==" "(" states ")" ENDP     { $$ = std::make_unique<p_expression>(std::move($3), std::move($7));}
+| EXTERNALINPUT                             {$$ = std::make_unique<external_input_expression>($1);}
+
+
+states:
+  states "," NUMBER                       { $1.push_back($3); $$ = std::move($1); }
+| NUMBER                                  { $$.push_back(std::move($1)); }
+
+nodes:
+  nodes "," IDENTIFIER                       { $1.push_back(std::move($3)); $$ = std::move($1); }
+| IDENTIFIER                                  {$$.push_back(std::move($1));}
 %%
 
 void

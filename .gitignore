@@ -5,3 +5,5 @@ build
 src/parser/generated/*
 src/jit_kernels/include/*
 src/jit_kernels/fatbin/*
+generated
+*.csv

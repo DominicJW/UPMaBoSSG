@@ -85,7 +85,7 @@ void generator::generate_node_transitions(std::ostringstream& os) const
 {
 	for (auto&& node : drv_.nodes)
 	{
-		os << "__device__ float " << node.name << "_rate(const state_word_t* __restrict__ state) " << std::endl;
+		os << "__device__ float " << node.name << "_rate(const state_word_t* __restrict__ state,float* external_inputs) " << std::endl;
 		os << "{" << std::endl;
 
 		float up_val, down_val;
@@ -124,7 +124,7 @@ void generator::generate_node_transitions(std::ostringstream& os) const
 void generator::generate_aggregate_function(std::ostringstream& os) const
 {
 	os << "__device__ float compute_transition_rates(float* __restrict__ transition_rates, const state_word_t* "
-		  "__restrict__ state)"
+		  "__restrict__ state,float* external_inputs)"
 	   << std::endl;
 	os << "{" << std::endl;
 	os << "    float sum = 0;" << std::endl;
@@ -134,7 +134,7 @@ void generator::generate_aggregate_function(std::ostringstream& os) const
 	int i = 0;
 	for (auto&& node : drv_.nodes)
 	{
-		os << "    tmp = " << node.name << "_rate(state);" << std::endl;
+		os << "    tmp = " << node.name << "_rate(state,external_inputs);" << std::endl;
 		os << "    transition_rates[" << i++ << "] = tmp;" << std::endl;
 		os << "    sum += tmp;" << std::endl;
 		os << std::endl;
@@ -184,14 +184,14 @@ extern __device__ void simulate_inner(int trajectories_count, int state_size, in
 									  float* __restrict__ trajectory_times,
 									  float* __restrict__ trajectory_transition_entropies,
 									  trajectory_status* __restrict__ trajectory_statuses,
-									  float* __restrict__ transition_rates, state_word_t* __restrict__ state);
+									  float* __restrict__ transition_rates, state_word_t* __restrict__ state,float* external_inputs);
 
 extern "C" __global__ void simulate(int trajectories_count, int trajectory_limit,
 									state_word_t* __restrict__ last_states, float* __restrict__ last_times,
 									void* __restrict__ rands, state_word_t* __restrict__ trajectory_states,
 									float* __restrict__ trajectory_times,
 									float* __restrict__ trajectory_transition_entropies,
-									trajectory_status* __restrict__ trajectory_statuses)
+									trajectory_status* __restrict__ trajectory_statuses,float* external_inputs)
 {
 	float transition_rates[state_size];
 
@@ -199,7 +199,7 @@ extern "C" __global__ void simulate(int trajectories_count, int trajectory_limit
 
 	simulate_inner(trajectories_count, state_size, trajectory_limit, time_tick, max_time, discrete_time, last_states,
 				   last_times, rands, trajectory_states, trajectory_times, trajectory_transition_entropies,
-				   trajectory_statuses, transition_rates, state);
+				   trajectory_statuses, transition_rates, state,external_inputs);
 }
 )";
 }
@@ -233,3 +233,6 @@ void generator::generate_non_internal_index(std::ostringstream& os) const
 	}
 	os << ";" << std::endl << "}" << std::endl;
 }
+
+
+

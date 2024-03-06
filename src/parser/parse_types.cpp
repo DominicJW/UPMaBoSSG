@@ -21,3 +21,5 @@ bool node_t::is_internal(const driver& drv) const
 {
 	return has_attr("is_internal") && get_attr("is_internal").second->evaluate(drv) != 0;
 }
+
+ext_inp_t::ext_inp_t(std::string name, expr_ptr expr) : name(std::move(name)), expr(std::move(expr)) {}

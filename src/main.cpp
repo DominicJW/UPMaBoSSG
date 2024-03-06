@@ -2,6 +2,8 @@
 #include <iostream>
 #include <optional>
 
+#include <vector>
+
 #include "generator.h"
 #include "kernel_compiler.h"
 #include "simulation_runner.h"
@@ -11,6 +13,9 @@
 #include "statistics/stats_composite.h"
 #include "statistics/window_average_small.h"
 #include "timer.h"
+
+
+
 
 state_t create_noninternals_mask(driver& drv)
 {
@@ -43,9 +48,28 @@ int do_compilation(driver& drv, bool discrete_time, std::optional<kernel_compile
 
 	auto s = gen.generate_code();
 
+	std::string filename = "generated/generated_code.cpp";
+    std::ofstream file(filename);
+    if (!file) {
+        std::cerr << "Error creating file: " << filename << std::endl;
+        return 1; // Return an error code
+    }
+    std::string content = s;
+    file << content;
+    file.close();
+    std::cout << "File written successfully: " << filename << std::endl;
+	std::ifstream read_file("generated/generated_code.cpp");
+    std::string fileContents;
+    if (read_file) {
+        std::stringstream buffer;
+        buffer << read_file.rdbuf();
+        fileContents = buffer.str();
+    }
+
+
 	compiler.emplace();
 
-	if (compiler->compile_simulation(s, discrete_time))
+	if (compiler->compile_simulation(fileContents, discrete_time))
 		return 1;
 
 	return 0;
@@ -53,11 +77,11 @@ int do_compilation(driver& drv, bool discrete_time, std::optional<kernel_compile
 
 stats_composite do_simulation(bool discrete_time, float max_time, float time_tick, int sample_count, int state_size,
 							  unsigned long long seed, std::vector<float> initial_probs,
-							  const state_t& noninternals_mask, int noninternals_count, kernel_compiler& compiler)
+							  const state_t& noninternals_mask, int noninternals_count, kernel_compiler& compiler,driver& drv)
 {
 	timer_stats stats("main> simulation");
 
-	simulation_runner r(sample_count, state_size, seed, std::move(initial_probs));
+	simulation_runner r(sample_count, state_size, seed, std::move(initial_probs),drv);
 
 	stats_composite stats_runner;
 
@@ -94,34 +118,47 @@ void do_visualization(stats_composite& stats_runner, int sample_count, const std
 	}
 	else
 	{
+
+		stats_runner.write_csv(sample_count, node_names, "no-prefix");
 		stats_runner.visualize(sample_count, node_names);
 	}
 }
 
 int main(int argc, char** argv)
 {
+
+
 	std::vector<std::string> args(argv + 1, argv + argc);
 
-	if (!(args.size() == 2 || (args.size() == 4 && args[0] == "-o")))
-	{
-		std::cout << "Usage: MaBoSSG [-o prefix] bnd_file cfg_file" << std::endl;
-		return 1;
-	}
+	// if (!(args.size() == 2 || (args.size() == 4 && args[0] == "-o")))
+	// {
+	// 	std::cout << "Usage: MaBoSSG [-o prefix] bnd_file cfg_file" << std::endl;
+	// 	return 1;
+	// }
 
 	std::string output_prefix = "";
 	std::string bnd_path = args[0];
 	std::string cfg_path = args[1];
+	std::string upp_path = "NOFILE";
+	
+	if ((args.size() == 3 ) && (args[0] != "-o"))
+		upp_path = args[2];
+
+
+	
 	if (args[0] == "-o")
 	{
 		output_prefix = args[1];
 		bnd_path = args[2];
 		cfg_path = args[3];
+		if (args.size() == 5)
+			upp_path = args[4];
 	}
 
 	driver drv;
 	{
 		timer_stats stats("main> compilation");
-		if (drv.parse(bnd_path, cfg_path))
+		if (drv.parse(bnd_path, cfg_path,upp_path))
 			return 1;
 	}
 
@@ -151,6 +188,7 @@ int main(int argc, char** argv)
 		return 1;
 	}
 
+
 	{
 		std::optional<kernel_compiler> compiler;
 
@@ -158,7 +196,7 @@ int main(int argc, char** argv)
 			return 1;
 
 		auto stats_runner = do_simulation(discrete_time, max_time, time_tick, sample_count, drv.nodes.size(), seed,
-										  std::move(initial_probs), noninternals_mask, noninternals_count, *compiler);
+										  std::move(initial_probs), noninternals_mask, noninternals_count, *compiler,drv);
 
 		do_visualization(stats_runner, sample_count, node_names, output_prefix);
 	}

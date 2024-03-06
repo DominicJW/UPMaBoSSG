@@ -71,7 +71,7 @@ extern "C" __global__ void initialize_initial_state(int trajectories_count, int 
 }
 
 extern __device__ float compute_transition_rates(float* __restrict__ transition_rates,
-												 const state_word_t* __restrict__ state);
+												 const state_word_t* __restrict__ state,float* external_inputs);
 extern __device__ float compute_transition_entropy(const float* __restrict__ transition_rates);
 
 __device__ void simulate_inner(int trajectories_count, int state_size, int trajectory_limit, float time_tick,
@@ -80,7 +80,7 @@ __device__ void simulate_inner(int trajectories_count, int state_size, int traje
 							   state_word_t* __restrict__ trajectory_states, float* __restrict__ trajectory_times,
 							   float* __restrict__ trajectory_transition_entropies,
 							   trajectory_status* __restrict__ trajectory_statuses,
-							   float* __restrict__ transition_rates, state_word_t* __restrict__ state)
+							   float* __restrict__ transition_rates, state_word_t* __restrict__ state,float* external_inputs)
 {
 	curandState* __restrict__ rands = reinterpret_cast<curandState*>(rands_v);
 	auto id = blockIdx.x * blockDim.x + threadIdx.x;
@@ -106,7 +106,7 @@ __device__ void simulate_inner(int trajectories_count, int state_size, int traje
 	while (true)
 	{
 		// get transition rates for current state
-		float total_rate = compute_transition_rates(transition_rates, state);
+		float total_rate = compute_transition_rates(transition_rates, state,external_inputs);
 
 		float transition_entropy = 0.f;
 

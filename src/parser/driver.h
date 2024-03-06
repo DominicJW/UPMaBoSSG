@@ -18,6 +18,7 @@ public:
 	{
 		cfg,
 		bnd,
+		upp,
 		none
 	};
 
@@ -41,6 +42,7 @@ public:
 	std::map<std::string, float> variables;
 	std::map<std::string, float> constants;
 	std::vector<node_t> nodes;
+	std::vector<ext_inp_t> external_inputs;
 
 	void register_variable(std::string name, expr_ptr expr);
 	void register_constant(std::string name, expr_ptr expr);
@@ -48,7 +50,15 @@ public:
 	void register_node_attribute(std::string node, std::string name, expr_ptr expr);
 	void register_node_istate(std::string node, expr_ptr expr_l, expr_ptr expr_r, int value_l);
 
-	int parse(std::string bnd_file, std::string cfg_file);
+
+	void register_external_input(std::string name);
+	void register_external_input(std::string name, expr_ptr expr);
+	void register_external_input_expression_attribute(std::string name, expr_ptr);
+	void register_external_input_expression_attribute(ext_inp_t external_inp, expr_ptr expr);
+
+
+	// int parse(std::string bnd_file, std::string cfg_file);
+	int parse(std::string bnd_file, std::string cfg_file,std::string  upp_file);
 
 	// Run the parser on the file.
 	// Return 0 on success.

@@ -27,3 +27,11 @@ struct node_t
 
 	bool is_internal(const driver& drv) const;
 };
+
+struct ext_inp_t
+{
+	std::string name;
+	expr_ptr expr;
+
+	ext_inp_t(std::string name, expr_ptr expr);
+};

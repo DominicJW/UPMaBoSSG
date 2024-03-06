@@ -13,12 +13,15 @@ driver::driver() : trace_parsing(false), trace_scanning(false), start(start_type
 	constants["seed_pseudorandom"] = 0;
 }
 
-int driver::parse(std::string bnd_file, std::string cfg_file)
+
+int driver::parse(std::string bnd_file, std::string cfg_file,std::string upp_file)
 {
+
+	int res;
 	{
 		timer_stats t("parser> parse_bnd");
 		start = start_type::bnd;
-		int res = parse_one(bnd_file);
+		res = parse_one(bnd_file);
 		if (res != 0)
 			return res;
 	}
@@ -26,12 +29,28 @@ int driver::parse(std::string bnd_file, std::string cfg_file)
 	{
 		timer_stats t("parser> parse_cfg");
 		start = start_type::cfg;
-		return parse_one(cfg_file);
+		res = parse_one(cfg_file);
+		if (res != 0)
+			return res;
 	}
+	
+	{
+		if(upp_file != "NOFILE")
+		{
+			timer_stats t("parser> parse_upp");
+			start = start_type::upp;
+			return parse_one(upp_file);
+		}
+	}
+	return 0;
 }
+
+
 
 int driver::parse_one(std::string f)
 {
+	
+
 	file = std::move(f);
 	location.initialize(&file);
 	scan_begin();
@@ -96,4 +115,35 @@ void driver::register_node_istate(std::string node_name, expr_ptr expr_l, expr_p
 	}
 	else
 		throw std::runtime_error("Unknown node " + node_name);
+}
+
+
+
+
+void driver::register_external_input(std::string name)
+{
+	throw "this constructor not implemented";
+	// ext_inp_t ext_inp_t(std::move(name)); //remember c++ funny constructor
+
+	// external_inputs.emplace_back(ext_inp);
+}
+
+void driver::register_external_input(std::string name,expr_ptr expr)
+{
+	ext_inp_t myvar(std::move(name), std::move(expr)); //remember c++ funny constructor
+
+	external_inputs.emplace_back(std::move(myvar));
+}
+
+
+void driver::register_external_input_expression_attribute(ext_inp_t ext_inp,expr_ptr expr)
+{
+	
+	throw "register_external_input_expression_attribute not implemented";
+}
+
+void driver::register_external_input_expression_attribute(std::string name,expr_ptr expr)
+{
+	throw "register_external_input_expression_attribute not implemented";
+
 }

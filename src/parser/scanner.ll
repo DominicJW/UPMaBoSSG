@@ -14,6 +14,8 @@
 %{
   yy::parser::symbol_type make_NUMBER(const std::string &s, const yy::parser::location_type& loc);
   yy::parser::symbol_type make_FLOAT(const std::string &s, const yy::parser::location_type& loc);
+  
+  
   void syntax_error(const std::string &s, const yy::parser::location_type& loc);
 %}
 
@@ -46,6 +48,12 @@ exppart		              [eE](\-|\+)?[0-9]+
     drv.start = driver::start_type::none;
     return yy::parser::make_BND_START(loc);
   }
+  else if (drv.start == driver::start_type::upp)
+  {
+    drv.start = driver::start_type::none;
+    return yy::parser::make_UPP_START(loc);
+  }
+
 %}
 
 {blank}+                loc.step ();
@@ -77,6 +85,11 @@ exppart		              [eE](\-|\+)?[0-9]+
 "."                     return yy::parser::make_DOT(loc);
 ";"                     return yy::parser::make_SEMICOLON(loc);
 
+"p\["                   return yy::parser::make_STARTP(loc);
+"\]"                    return yy::parser::make_ENDP(loc);
+","                     return yy::parser::make_COMMA(loc);
+
+
 
 (?i:TRUE)               return yy::parser::make_NUMBER(1, loc);
 (?i:FALSE)              return yy::parser::make_NUMBER(0, loc);
@@ -89,6 +102,11 @@ exppart		              [eE](\-|\+)?[0-9]+
 {id}                    return yy::parser::make_IDENTIFIER(yytext, loc);
 "$"{id}                 return yy::parser::make_VARIABLE(yytext, loc);
 "@"{id}                 return yy::parser::make_ALIAS(yytext, loc);
+"£"{id}                 return yy::parser::make_EXTERNALINPUT(yytext, loc);
+
+
+
+
 
 .                       syntax_error(yytext, loc);
 <<EOF>>                 return yy::parser::make_YYEOF(loc);
