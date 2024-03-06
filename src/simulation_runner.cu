@@ -136,6 +136,8 @@ void simulation_runner::run_simulation(stats_composite& stats_runner, kernel_wra
 
 		}
 		CUDA_CHECK(cudaMemcpy(external_inputs.get(), external_inputs_host.data(), external_inputs_host.size() * sizeof(float),cudaMemcpyHostToDevice));
+		//cell death and division happens afrer this calculation
+
 
 		while (trajectories_in_batch)
 		{
@@ -165,22 +167,22 @@ void simulation_runner::run_simulation(stats_composite& stats_runner, kernel_wra
 			// prepare for the next iteration
 			{
 				timer_stats stats("simulation_runner> prepare_next_iter");
-
-				// move unfinished trajs to the front and update trajectories_in_batch
 				{
 					thrust::stable_partition(d_last_states, d_last_states + trajectories_in_batch * state_words_,
 											 repeat_iterator(d_traj_statuses, state_words_),
 											 eq_ftor<trajectory_status>(trajectory_status::CONTINUE));
 
+
 					auto thread_state_begin = thrust::make_zip_iterator(d_last_times, d_rands);
 					auto remaining_trajectories_in_batch =
-						thrust::partition(thread_state_begin, thread_state_begin + trajectories_in_batch, d_traj_statuses,
+						thrust::stable_partition(thread_state_begin, thread_state_begin + trajectories_in_batch, d_traj_statuses,
 										  eq_ftor<trajectory_status>(trajectory_status::CONTINUE))
 						- thread_state_begin;
 
 					remaining_trajs -= trajectories_in_batch - remaining_trajectories_in_batch;
 					trajectories_in_batch = remaining_trajectories_in_batch;
 				}
+
 
 				// add new work to the batch
 				{
@@ -189,6 +191,7 @@ void simulation_runner::run_simulation(stats_composite& stats_runner, kernel_wra
 
 					if (new_batch_addition)
 					{
+						//why if step==0?
 						if (step == 0)
 						{
 							initialize_initial_state.run(
