@@ -277,7 +277,7 @@ float p_expression::evaluate(const driver& drv,std::vector<state_word_t> last_st
 {
 	//although unchanging for each time evaluate is called, the complexity overhead is negligible. 
 	int state_words = DIV_UP(drv.nodes.size(), 32);
-	int total = 0;
+	float total = 0;
 	std::vector<state_word_t> on_states(state_words,0);
 	std::vector<state_word_t> off_states(state_words,0);
 	for (int i = 0; i< node_name_list.size(); i++)
@@ -300,8 +300,11 @@ float p_expression::evaluate(const driver& drv,std::vector<state_word_t> last_st
 			off_states[word] = off_states[word] + std::pow(2,bit);
 		}
 	}
-
-	for (int cell_idx = 0;cell_idx<  drv.constants.at("sample_count"); cell_idx++)
+	//should be 'cells in simulation right now' variable not this
+	//calculate by dividing last_states size by state_words
+	//last_states size steadily increasing
+	float number_of_cells = DIV_UP(last_states.size(),state_words);
+	for (int cell_idx = 0;cell_idx<  number_of_cells; cell_idx++)
 	{ 
     	std::vector<state_word_t> cell_last_states(last_states.begin() + (cell_idx * state_words),last_states.begin() + (cell_idx * state_words)+state_words);
 		std::vector<state_word_t> on_and(state_words);
@@ -312,7 +315,7 @@ float p_expression::evaluate(const driver& drv,std::vector<state_word_t> last_st
 		bool condition_true_for_sample = std::equal(on_states.begin(), on_states.end(), on_and.begin(), on_and.end()) && (std::accumulate(off_and.begin(), off_and.end(), 0) == 0) ;
 		total = total + condition_true_for_sample;
 	}
-	return total/drv.constants.at("sample_count");
+	return total/number_of_cells;
 }
 
 void p_expression::generate_code(const driver& drv, const std::string& current_node, std::ostream& os) const

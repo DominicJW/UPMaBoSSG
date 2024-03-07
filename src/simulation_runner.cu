@@ -40,6 +40,55 @@ private:
 	}
 };
 
+
+
+void simulation_runner::save_trajs_before_overwrite(int trajectories_in_batch,int new_batch_addition,thrust::device_ptr<state_word_t> d_last_states,thrust::device_ptr<float> d_last_times, thrust::device_ptr<curandState> d_rands)
+{
+
+
+
+	//saved anyway for external_inputs calc (this may change when more of that is put onto the GPU
+	std::vector<state_word_t> state_buffer(new_batch_addition*state_words_);
+	cudaMemcpy(state_buffer.data(), d_last_states.get()+trajectories_in_batch*state_words_,  new_batch_addition*state_words_ * sizeof(state_word_t),cudaMemcpyDeviceToHost);
+	saved_states.insert(saved_states.end(), state_buffer.begin(), state_buffer.begin() + new_batch_addition*state_words_);//check size of vector
+
+	std::vector<float> times_buffer(new_batch_addition);
+	cudaMemcpy(times_buffer.data(), d_last_times.get()+trajectories_in_batch, new_batch_addition * sizeof(float),cudaMemcpyDeviceToHost);
+	saved_times.insert(saved_times.end(), times_buffer.begin(), times_buffer.begin() + new_batch_addition);
+	
+
+	//is it neccasary to make sure rands are kept in order? they are just random seeds after all
+	std::vector<curandState> rands_buffer(new_batch_addition);
+	cudaMemcpy(rands_buffer.data(), d_rands.get()+trajectories_in_batch, new_batch_addition * sizeof(curandState),cudaMemcpyDeviceToHost); 
+	saved_rands.insert(saved_rands.end(),rands_buffer.begin(),rands_buffer.begin()+new_batch_addition);
+
+	//They all get set to continue in the end anyway, and they are all at ::finiished by the time they get saved.//dont need to save
+	// cudaMemcpy(saved_stauses.data(), d_traj_statuses.get()+trajectories_in_batch, new_batch_addition * sizeof(trajectory_status::CONTINUE),cudaMemcpyDeviceToHost);
+}
+
+void simulation_runner::load_batch_addition_from_saved_and_new(int trajectories_in_batch,int new_batch_addition,thrust::device_ptr<state_word_t> d_last_states,thrust::device_ptr<float> d_last_times, thrust::device_ptr<curandState> d_rands,thrust::device_ptr<trajectory_status> d_traj_statuses)
+{
+	//saved anyway for external_inputs calc (this may change when more of that is put onto the GPU
+	cudaMemcpy(d_last_states.get()+trajectories_in_batch*state_words_, saved_states.data(), new_batch_addition*state_words_ * sizeof(state_word_t),cudaMemcpyHostToDevice);
+	saved_states.erase(saved_states.begin(), saved_states.begin() + new_batch_addition* state_words_ );
+	
+	cudaMemcpy(d_last_times.get()+trajectories_in_batch, saved_times.data(), new_batch_addition * sizeof(float),cudaMemcpyHostToDevice);
+	saved_times.erase(saved_times.begin(), saved_times.begin() + new_batch_addition);
+
+	//is it neccasary to make sure rands are kept in order? they are just random seeds after all
+	cudaMemcpy(d_rands.get()+trajectories_in_batch, saved_rands.data() , new_batch_addition * sizeof(curandState),cudaMemcpyHostToDevice); 
+	saved_rands.erase(saved_rands.begin(), saved_rands.begin() + new_batch_addition);
+	
+	//think here, should all just be continue
+	// cudaMemcpy(d_traj_statuses.get()+trajectories_in_batch,saved_stauses.data(), new_batch_addition * sizeof(trajectory_status::CONTINUE),cudaMemcpyHostToDevice);
+	// saved_statuses.erase(saved_statuses.begin(), saved_statuses.begin() + new_batch_addition);
+	
+	cudaMemset(d_traj_statuses.get(), static_cast<int>(trajectory_status::CONTINUE), new_batch_addition * sizeof(trajectory_status));
+}
+
+
+
+
 simulation_runner::simulation_runner(int n_trajectories, int state_size, unsigned long long seed,
 									 std::vector<float> inital_probs,driver& drv)
 	: n_trajectories_(n_trajectories),
@@ -104,11 +153,9 @@ void simulation_runner::run_simulation(stats_composite& stats_runner, kernel_wra
 	n_trajectories_ -= trajectories_in_batch;
 
 
-
 	thrust::device_ptr<float> external_inputs = thrust::device_malloc<float>(drv.external_inputs.size());
-	std::vector<float> external_inputs_host(drv.external_inputs.size());	 
+	std::vector<float> external_inputs_host(drv.external_inputs.size());
 	std::vector<state_word_t> h_last_states(trajectory_batch_limit * state_words_);
-
 
 	bool keyExists = (drv.constants.find("steps") != drv.constants.end());
 	int steps;
@@ -119,16 +166,18 @@ void simulation_runner::run_simulation(stats_composite& stats_runner, kernel_wra
 	for(int step = 0; step< steps; step++)
 	{
 		n_trajectories_ = sample_size;
-		remaining_trajs = n_trajectories_;;
 		trajectories_in_batch = std::min(n_trajectories_, trajectory_batch_limit);
+		n_trajectories_ -= trajectories_in_batch;
+		remaining_trajs = n_trajectories_;//this var doesnt matter much
 
 		CUDA_CHECK(cudaMemset(d_traj_statuses.get(), static_cast<int>(trajectory_status::CONTINUE),  trajectory_batch_limit * sizeof(trajectory_status)));
 		CUDA_CHECK(cudaMemset(d_last_times.get(), 0,  trajectory_batch_limit * sizeof(float)));
 		CUDA_CHECK(cudaMemset(d_traj_times.get(), 0,  trajectory_batch_limit * trajectory_len_limit * sizeof(float)));
 
-
-		CUDA_CHECK(cudaMemcpy(h_last_states.data(), d_last_states.get(), h_last_states.size() * sizeof(state_word_t),cudaMemcpyDeviceToHost));
-
+		//may put this in the kernel
+		h_last_states.resize(trajectory_batch_limit*state_words_+saved_states.size()*state_words_);
+		CUDA_CHECK(cudaMemcpy(h_last_states.data(), d_last_states.get(), trajectory_batch_limit * state_words_ * sizeof(state_word_t),cudaMemcpyDeviceToHost));
+	    std::copy(saved_states.begin(), saved_states.end(), h_last_states.begin()+trajectory_batch_limit * state_words_);
 		for (int i = 0; i < drv.external_inputs.size();i++)
 		{
 
@@ -168,9 +217,11 @@ void simulation_runner::run_simulation(stats_composite& stats_runner, kernel_wra
 			{
 				timer_stats stats("simulation_runner> prepare_next_iter");
 				{
+
 					thrust::stable_partition(d_last_states, d_last_states + trajectories_in_batch * state_words_,
 											 repeat_iterator(d_traj_statuses, state_words_),
 											 eq_ftor<trajectory_status>(trajectory_status::CONTINUE));
+
 
 
 					auto thread_state_begin = thrust::make_zip_iterator(d_last_times, d_rands);
@@ -184,6 +235,7 @@ void simulation_runner::run_simulation(stats_composite& stats_runner, kernel_wra
 				}
 
 
+
 				// add new work to the batch
 				{
 					int batch_free_size = trajectory_batch_limit - trajectories_in_batch;
@@ -191,13 +243,17 @@ void simulation_runner::run_simulation(stats_composite& stats_runner, kernel_wra
 
 					if (new_batch_addition)
 					{
-						//why if step==0?
+						save_trajs_before_overwrite(trajectories_in_batch,new_batch_addition, d_last_states,d_last_times, d_rands);
 						if (step == 0)
 						{
 							initialize_initial_state.run(
 								dim3(DIV_UP(new_batch_addition, 256)), dim3(256), new_batch_addition, state_size_,
 								d_initial_probs.get(), d_last_states.get() + trajectories_in_batch * state_words_,
 								d_last_times.get() + trajectories_in_batch, d_rands.get() + trajectories_in_batch);
+						}
+						else
+						{
+							load_batch_addition_from_saved_and_new(trajectories_in_batch,new_batch_addition, d_last_states,d_last_times, d_rands,d_traj_statuses);
 						}
 						trajectories_in_batch += new_batch_addition;
 						n_trajectories_ -= new_batch_addition;
@@ -227,3 +283,5 @@ void simulation_runner::run_simulation(stats_composite& stats_runner, kernel_wra
 	thrust::device_free(d_traj_statuses);
 	thrust::device_free(external_inputs);
 }
+
+
