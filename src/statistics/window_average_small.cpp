@@ -80,7 +80,8 @@ void window_average_small_stats::process_batch_internal(thrust::device_ptr<state
 		shared_mem_size += sizeof(float) * noninternal_states_count_ * windows_count;
 		extra_shared_mem = true;
 	}
-
+	//sort to put the 'empty' trajes to the end, then count the index of the first traj, then num threads in kernel to be number of non-free trajes.
+	//traj stuatus being used to denote 'not a trajectory' 
 	window_average_small_.run_shared(
 		dim3(DIV_UP(n_trajectories * (max_traj_len_ - 1), 256)), dim3(256), shared_mem_size, max_traj_len_,
 		n_trajectories, (int)noninternals_mask_.words_n(), noninternal_states_count_, window_size_, windows_count,
