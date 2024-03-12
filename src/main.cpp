@@ -130,22 +130,11 @@ int main(int argc, char** argv)
 
 	std::vector<std::string> args(argv + 1, argv + argc);
 
-	// if (!(args.size() == 2 || (args.size() == 4 && args[0] == "-o")))
-	// {
-	// 	std::cout << "Usage: MaBoSSG [-o prefix] bnd_file cfg_file" << std::endl;
-	// 	return 1;
-	// }
 
 	std::string output_prefix = "";
 	std::string bnd_path = args[0];
 	std::string cfg_path = args[1];
 	std::string upp_path = "NOFILE";
-	
-	if ((args.size() == 3 ) && (args[0] != "-o"))
-		upp_path = args[2];
-
-
-	
 	if (args[0] == "-o")
 	{
 		output_prefix = args[1];
@@ -154,6 +143,10 @@ int main(int argc, char** argv)
 		if (args.size() == 5)
 			upp_path = args[4];
 	}
+	else if (args.size() == 3)
+			upp_path = args[2];
+
+
 
 	driver drv;
 	{
