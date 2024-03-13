@@ -28,7 +28,7 @@ public:
 	simulation_runner(int n_trajectories, int state_size, unsigned long long seed, std::vector<float> inital_probs,driver& drv);
 
 	void run_simulation(stats_composite& stats_runner, kernel_wrapper& initialize_random,
-						kernel_wrapper& initialize_initial_state, kernel_wrapper& simulate);
+						kernel_wrapper& initialize_initial_state, kernel_wrapper& simulate,const std::string& output_prefix);
 
 	void save_trajs_before_overwrite(int trajectories_in_batch,int new_batch_addition,thrust::device_ptr<state_word_t> d_last_states,thrust::device_ptr<float> d_last_times, thrust::device_ptr<curandState> d_rands);
 

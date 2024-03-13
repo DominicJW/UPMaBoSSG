@@ -156,7 +156,7 @@ simulation_runner::simulation_runner(int n_trajectories, int state_size, unsigne
 }
 
 void simulation_runner::run_simulation(stats_composite& stats_runner, kernel_wrapper& initialize_random,
-									   kernel_wrapper& initialize_initial_state, kernel_wrapper& simulate)
+									   kernel_wrapper& initialize_initial_state, kernel_wrapper& simulate,const std::string& output_prefix)
 {
 	int remaining_trajs = n_trajectories_;
 	int sample_size = n_trajectories_;
@@ -235,6 +235,10 @@ void simulation_runner::run_simulation(stats_composite& stats_runner, kernel_wra
 	i = it - drv.nodes.begin();
 	int division_word_offset = i / 32;
 	int division_bit = i % 32;
+	
+	std::vector<std::string> node_names;
+	for (auto&& node : drv.nodes)
+		node_names.push_back(node.name);
 
 	for(int step = 0; step<= steps; step++)
 	{	
@@ -410,7 +414,7 @@ void simulation_runner::run_simulation(stats_composite& stats_runner, kernel_wra
 
 				// compute statistics over the simulated trajs
 				// restrict to final step, until new upmaboss stats class
-				if (step == steps)
+				if (step == steps || true)
 				{
 					std::cout<<"step " <<step;
 				stats_runner.process_batch(d_traj_states, d_traj_times, d_traj_tr_entropies, d_last_states, d_traj_statuses,
@@ -475,6 +479,8 @@ void simulation_runner::run_simulation(stats_composite& stats_runner, kernel_wra
 				std::cerr << "simulation_runner> remaining trajs: " << remaining_trajs << std::endl;
 			}
 		}
+    std::string step_wise_prefix = output_prefix + "Step_" + std::to_string(step);
+		stats_runner.write_csv(sample_size,node_names,step_wise_prefix);
 	}
 
 	timer_stats stats("simulation_runner> deallocate");

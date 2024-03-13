@@ -77,7 +77,7 @@ int do_compilation(driver& drv, bool discrete_time, std::optional<kernel_compile
 
 stats_composite do_simulation(bool discrete_time, float max_time, float time_tick, int sample_count, int state_size,
 							  unsigned long long seed, std::vector<float> initial_probs,
-							  const state_t& noninternals_mask, int noninternals_count, kernel_compiler& compiler,driver& drv)
+							  const state_t& noninternals_mask, int noninternals_count, kernel_compiler& compiler,driver& drv,const std::string& output_prefix)
 {
 	timer_stats stats("main> simulation");
 
@@ -98,7 +98,7 @@ stats_composite do_simulation(bool discrete_time, float max_time, float time_tic
 		r.trajectory_batch_limit, compiler.window_average_small));
 
 	// // run
-	r.run_simulation(stats_runner, compiler.initialize_random, compiler.initialize_initial_state, compiler.simulate);
+	r.run_simulation(stats_runner, compiler.initialize_random, compiler.initialize_initial_state, compiler.simulate,output_prefix);
 
 	// // finalize
 	stats_runner.finalize();
@@ -189,7 +189,7 @@ int main(int argc, char** argv)
 			return 1;
 
 		auto stats_runner = do_simulation(discrete_time, max_time, time_tick, sample_count, drv.nodes.size(), seed,
-										  std::move(initial_probs), noninternals_mask, noninternals_count, *compiler,drv);
+										  std::move(initial_probs), noninternals_mask, noninternals_count, *compiler,drv,output_prefix);
 
 		do_visualization(stats_runner, sample_count, node_names, output_prefix);
 	}
