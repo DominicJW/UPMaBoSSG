@@ -186,7 +186,16 @@ exp:
 | "-" exp %prec UMINUS                      { $$ = std::make_unique<unary_expression>(operation::MINUS, std::move($2)); }
 | "+" exp %prec UPLUS                       { $$ = std::make_unique<unary_expression>(operation::PLUS, std::move($2)); }
 | NOT exp                                   { $$ = std::make_unique<unary_expression>(operation::NOT, std::move($2)); }
-| STARTP "(" nodes ")" "==" "(" states ")" ENDP     { $$ = std::make_unique<p_expression>(std::move($3), std::move($7));}
+| STARTP "(" nodes ")" "==" "(" states ")" ENDP {
+                                                  std::set<std::pair<std::string, int>> paired;
+                                                  for (size_t i = 0; i < $3.size(); ++i) {
+                                                      paired.insert(std::make_pair($3[i], $7[i]));
+                                                  }
+                                                  drv.register_p_expression(paired);
+                                                  $$ = std::make_unique<p_expression>(paired);
+
+
+                                                }
 | EXTERNALINPUT                             {$$ = std::make_unique<external_input_expression>($1);}
 
 

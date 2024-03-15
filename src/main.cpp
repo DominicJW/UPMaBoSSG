@@ -101,7 +101,8 @@ stats_composite do_simulation(bool discrete_time, float max_time, float time_tic
 	r.run_simulation(stats_runner, compiler.initialize_random, compiler.initialize_initial_state, compiler.simulate,output_prefix);
 
 	// // finalize
-	stats_runner.finalize();
+	
+	// stats_runner.finalize();
 
 	return stats_runner;
 }
@@ -120,7 +121,7 @@ void do_visualization(stats_composite& stats_runner, int sample_count, const std
 	{
 
 		stats_runner.write_csv(sample_count, node_names, "no-prefix");
-		stats_runner.visualize(sample_count, node_names);
+		// stats_runner.visualize(sample_count, node_names);
 	}
 }
 
@@ -191,7 +192,7 @@ int main(int argc, char** argv)
 		auto stats_runner = do_simulation(discrete_time, max_time, time_tick, sample_count, drv.nodes.size(), seed,
 										  std::move(initial_probs), noninternals_mask, noninternals_count, *compiler,drv,output_prefix);
 
-		do_visualization(stats_runner, sample_count, node_names, output_prefix);
+		// do_visualization(stats_runner, sample_count, node_names, output_prefix);
 	}
 
 	timer_stats::print_aggregate_stats();

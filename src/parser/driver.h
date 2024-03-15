@@ -43,6 +43,7 @@ public:
 	std::map<std::string, float> constants;
 	std::vector<node_t> nodes;
 	std::vector<ext_inp_t> external_inputs;
+	std::set<std::set<std::pair<std::string, int>>> p_expressions;
 
 	void register_variable(std::string name, expr_ptr expr);
 	void register_constant(std::string name, expr_ptr expr);
@@ -55,6 +56,8 @@ public:
 	void register_external_input(std::string name, expr_ptr expr);
 	void register_external_input_expression_attribute(std::string name, expr_ptr);
 	void register_external_input_expression_attribute(ext_inp_t external_inp, expr_ptr expr);
+
+	void register_p_expression(std::set<std::pair<std::string, int>> paired);
 
 
 	// int parse(std::string bnd_file, std::string cfg_file);

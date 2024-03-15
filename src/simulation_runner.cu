@@ -8,12 +8,17 @@
 #include <thrust/host_vector.h>
 
 #include <cmath>
+#include <set>
+#include <unordered_map>
+
+
 
 #include "simulation_runner.h"
 #include "state_word.h"
 #include "timer.h"
 #include "utils.h"
 #include "./parser/driver.h"
+#include "./parser/set_hash.h"
 
 template <typename T>
 struct eq_ftor
@@ -34,7 +39,7 @@ struct logical_not_bitwise_and
 	logical_not_bitwise_and(T it) : it(it) {}
 
 	__host__ __device__ bool operator()(T other) {
-		return 0 == (other && it); 
+		return 0 == (other & it); 
 	}
 };
 
@@ -47,7 +52,7 @@ struct bool_bitwise_and
 	bool_bitwise_and(T it) : it(it) {}
 
 	__host__ __device__ bool operator()(T other) { 
-		return other && it; 
+		return other & it; 
 		
 	}
 };
@@ -61,10 +66,13 @@ struct bitwise_and
 	bitwise_and(T it) : it(it) {}
 
 	__host__ __device__ state_word_t operator()(T other) { 
-		return other && it; 
+		return other & it; 
 		
 	}
 };
+
+
+
 
 
 
@@ -101,6 +109,59 @@ class jump_iterator : public thrust::iterator_adaptor<jump_iterator<Iterator>,It
     __host__ __device__ void increment() {this->base_reference()+=n;} 
 };
 
+
+
+
+
+// __global__ void d_calculate_p_expression(state_word_t* d_last_states, state_word_t* on_states, state_word_t* off_states, int state_words, int* d_sum)
+// {
+// 	auto id = blockIdx.x * blockDim.x + threadIdx.x;
+// 	bool condition = true;
+// 	for (int i = 0;i < state_words_;i++)
+// 	{
+// 		condition &= ((d_last_states[id*state_words_ + i] && on_states[i]) == on_states[i]) && (~d_last_states[id*state_words_ + i] && off_states[i] == off_states);
+// 	}
+// 		//could make more efficent by 
+// 		atomicAdd(d_sum,condition);
+// }
+
+
+
+__global__ void d_calculate_p_expression(state_word_t* d_last_states, state_word_t* on_states, state_word_t* off_states, int state_words, int* d_sum,int max) {
+    extern __shared__ int s_conditions[];
+    auto id = blockIdx.x * blockDim.x + threadIdx.x;
+    if (id >= max)
+    	return;
+    bool condition = true;
+    for (int i = 0; i < state_words; i++) {
+        condition &= ((d_last_states[id * state_words + i] && on_states[i]) == on_states[i]) && (~d_last_states[id * state_words + i] && off_states[i] == off_states[i]);
+    }
+    s_conditions[threadIdx.x] = condition;
+    __syncthreads();
+
+    if (threadIdx.x == 0) {
+        int block_sum = 0;
+        for (int i = 0; i < blockDim.x; i++) {
+            block_sum += s_conditions[i];
+        }
+        atomicAdd(d_sum, block_sum);
+    }
+}
+	
+int h_calculate_p_expression(thrust::host_vector<state_word_t> saved_states, std::vector<state_word_t> on_states, std::vector<state_word_t> off_states, int state_words)
+{
+	int sum = 0;
+	bool condition;
+	for (int id = 0; id < saved_states.size(); id += state_words)
+	{
+		for (int i = 0;i < state_words;i++)
+		{
+			condition &= ((saved_states[id*state_words + i] && on_states[i]) == on_states[i]) && ((~saved_states[id*state_words + i] && off_states[i]) == off_states[i]);
+		}
+		sum +=condition;
+	}
+	return sum;
+}
 
 
 
@@ -152,12 +213,14 @@ simulation_runner::simulation_runner(int n_trajectories, int state_size, unsigne
 	  drv(drv)
 {
 	trajectory_batch_limit = std::min(1'000'000, n_trajectories);
+	// trajectory_batch_limit = 1'000'000;
 	trajectory_len_limit = 100; // TODO compute limit according to the available mem
 }
 
 void simulation_runner::run_simulation(stats_composite& stats_runner, kernel_wrapper& initialize_random,
 									   kernel_wrapper& initialize_initial_state, kernel_wrapper& simulate,const std::string& output_prefix)
 {
+
 	int remaining_trajs = n_trajectories_;
 	int sample_size = n_trajectories_;
 
@@ -207,14 +270,13 @@ void simulation_runner::run_simulation(stats_composite& stats_runner, kernel_wra
 
 	thrust::device_ptr<float> external_inputs = thrust::device_malloc<float>(drv.external_inputs.size());
 	std::vector<float> external_inputs_host(drv.external_inputs.size());
-	std::vector<state_word_t> h_last_states(trajectory_batch_limit * state_words_);
 
 	
 	int steps;
 	if (drv.constants.find("steps") != drv.constants.end())
 		steps = drv.constants.at("steps");
 	else
-		steps = 1;
+		steps = 0;
 
 
 	bool death_and_div_set = true;
@@ -241,17 +303,65 @@ void simulation_runner::run_simulation(stats_composite& stats_runner, kernel_wra
 		node_names.push_back(node.name);
 
 	for(int step = 0; step<= steps; step++)
-	{	
-		//may put this in the kernel
+	{
 
-		if (step > 0)
+		if (step > 0 & false)
 		{
-			h_last_states.resize(trajectory_batch_limit*state_words_+saved_states.size()*state_words_);
-			CUDA_CHECK(cudaMemcpy(h_last_states.data(), d_last_states.get(), trajectory_batch_limit * state_words_ * sizeof(state_word_t),cudaMemcpyDeviceToHost));
-		    std::copy(saved_states.begin(), saved_states.end(), h_last_states.begin()+trajectory_batch_limit * state_words_);
+			
+				std::unordered_map<std::set<std::pair<std::string, int>>, float, set_hash> p_inputs;
+				for(std::set<std::pair<std::string,int>> paired: drv.p_expressions)
+				{
+					int state_words = DIV_UP(drv.nodes.size(), 32);
+					float total = 0;
+					std::vector<state_word_t> on_states(state_words,0);
+					std::vector<state_word_t> off_states(state_words,0);
+					
+					for (std::pair<std::string,int> node_state_pair: paired)
+					{
+						auto it = std::find_if(drv.nodes.begin(), drv.nodes.end(), [&](auto&& node) { return node.name == node_state_pair.first; });
+						if (it == drv.nodes.end()) {
+						    throw std::runtime_error("unknown node name: ");
+						}
+						int node_idx = std::distance(drv.nodes.begin(), it);
+						int word = node_idx / 32;
+						int bit = node_idx % 32;
+						if (node_state_pair.second)
+						{
+							on_states[word] = on_states[word] + (1 << bit);
+						}
+						else
+						{
+							off_states[word] = off_states[word] + (1 << bit);
+						}
+					}
+
+					//could put all outside for loop, cuts down on kernel launches, 
+					//kernel launches least of the worry if sample_size gets too big.
+				  int* d_sum;
+				  cudaMalloc(&d_sum, sizeof(int));
+				  cudaMemset(d_sum, 0, sizeof(int));
+				  thrust::device_ptr<state_word_t> d_on_states;
+				  thrust::device_ptr<state_word_t> d_off_states;
+				  d_on_states = thrust::device_malloc<state_word_t>(on_states.size());
+				  d_off_states = thrust::device_malloc<state_word_t>(off_states.size());
+				  int threadsPerBlock = 256;
+				  int max = std::min(trajectory_batch_limit,sample_size);
+    			int numBlocks = (max + threadsPerBlock - 1) / threadsPerBlock;
+    			d_calculate_p_expression<<<numBlocks, threadsPerBlock>>>(d_last_states.get(),d_on_states.get(),d_off_states.get(),state_words_,d_sum,max);
+					int sum;
+					cudaMemcpy(&sum, d_sum, sizeof(int), cudaMemcpyDeviceToHost);
+					sum += h_calculate_p_expression(saved_states,on_states,off_states,state_words_);
+					p_inputs[paired] = sum/sample_size;
+					//could put all this outside, forloop
+					cudaFree(d_sum);
+				}
+			
+
+
+
 			for (int i = 0; i < drv.external_inputs.size();i++)
 			{
-				external_inputs_host[i] = drv.external_inputs.at(i).expr->evaluate(drv,h_last_states);
+				external_inputs_host[i] = drv.external_inputs.at(i).expr->evaluate(drv,p_inputs);
 			}
 			CUDA_CHECK(cudaMemcpy(external_inputs.get(), external_inputs_host.data(), external_inputs_host.size() * sizeof(float),cudaMemcpyHostToDevice));
 		}
@@ -263,11 +373,16 @@ void simulation_runner::run_simulation(stats_composite& stats_runner, kernel_wra
 			}
 		}
 
-
 		if (death_and_div_set && step > 0)		
 		{
+			cudaError_t error = cudaDeviceSynchronize();
+
 			state_word_t div = (static_cast<state_word_t>(1) << division_bit);
 			state_word_t death = (static_cast<state_word_t>(1) << death_bit);
+
+
+			std::vector<state_word_t> h_last_states(trajectory_batch_limit * state_words_);
+			CUDA_CHECK(cudaMemcpy(h_last_states.data(), d_last_states.get(), trajectory_batch_limit * state_words_ * sizeof(state_word_t),cudaMemcpyDeviceToHost));
 
 			//do not use h_last_states!
 			auto h_times_rands = thrust::make_zip_iterator(saved_times.begin(), saved_rands.begin());
@@ -276,12 +391,12 @@ void simulation_runner::run_simulation(stats_composite& stats_runner, kernel_wra
 			auto d_times_rands = thrust::make_zip_iterator(d_last_times, d_rands);
 
 			//handling division
-			auto d_division_idx = thrust::stable_partition(d_times_rands,d_times_rands+trajectory_batch_limit,
+			auto d_division_idx = thrust::stable_partition(thrust::device,d_times_rands,d_times_rands+trajectory_batch_limit,
 				 jump_iterator(d_last_states+division_word_offset, state_words_),//that does the indexes
 				 bool_bitwise_and<state_word_t>(div)) - d_times_rands;
 
 
-			thrust::stable_partition(d_last_states,d_last_states+trajectory_batch_limit,
+			thrust::stable_partition(thrust::device,d_last_states,d_last_states+trajectory_batch_limit,
 				 repeat_iterator(jump_iterator(d_last_states+division_word_offset, state_words_),state_words_),//that does the indexes
 				 bool_bitwise_and<state_word_t>(div));
 
@@ -290,13 +405,12 @@ void simulation_runner::run_simulation(stats_composite& stats_runner, kernel_wra
 				 jump_iterator(saved_states.begin()+division_word_offset, state_words_),//that does the indexes
 				 bool_bitwise_and<state_word_t>(div)) - h_times_rands;
 
-			//you do need this
 			thrust::stable_partition(thrust::host,saved_states.begin(),saved_states.end(),
 				 repeat_iterator(jump_iterator(saved_states.begin()+division_word_offset, state_words_),state_words_),//that does the indexes
 				 bool_bitwise_and<state_word_t>(div));
 
+			
 			// SET DIVISION BITS TO ZERO
-
 			jump_iterator jump_it_h(saved_states.begin()+division_word_offset, state_words_);
 			thrust::transform(
 			    thrust::host, 
@@ -316,14 +430,16 @@ void simulation_runner::run_simulation(stats_composite& stats_runner, kernel_wra
 			);
 
 
-			//handling death
-			//this will put the cells which are not dead at begginging and d_death_idx points to the last live cell
-			//
-			auto d_death_idx = thrust::stable_partition(d_times_rands,d_times_rands+trajectory_batch_limit,
+
+
+
+			// handling death
+			// this will put the cells which are not dead at begginging and d_death_idx points to the last live cell
+			auto d_death_idx = thrust::stable_partition(thrust::device,d_times_rands,d_times_rands+trajectory_batch_limit,
 				 jump_iterator(d_last_states+death_word_offset, state_words_),//that does the indexes
 				 logical_not_bitwise_and<state_word_t>(death)) - d_times_rands;
 
-			thrust::stable_partition(d_last_states,d_last_states+trajectory_batch_limit,
+			thrust::stable_partition(thrust::device,d_last_states,d_last_states+trajectory_batch_limit,
 				 repeat_iterator(jump_iterator(d_last_states+death_word_offset, state_words_),state_words_),//that does the indexes
 				 logical_not_bitwise_and<state_word_t>(death));
 
@@ -337,7 +453,7 @@ void simulation_runner::run_simulation(stats_composite& stats_runner, kernel_wra
 				 logical_not_bitwise_and<state_word_t>(death));
 
 
-		
+
 
 			int device_deaths;
 			if (sample_size >= trajectory_batch_limit)
@@ -361,7 +477,7 @@ void simulation_runner::run_simulation(stats_composite& stats_runner, kernel_wra
 
 	        //should new rands be made?
 	        saved_rands.resize(originalSize + h_division_idx);
-	        std::copy(saved_rands.begin(), saved_rands.begin() + h_division_idx, saved_rands.begin() + originalSize); // h_division_idx is valid still 
+	        std::copy(saved_rands.begin(), saved_rands.begin() + h_division_idx, saved_rands.begin() + originalSize); 
 
 	        //should not need to copy times, new times should be 0?
 	        saved_times.resize(originalSize + h_division_idx);
@@ -387,6 +503,7 @@ void simulation_runner::run_simulation(stats_composite& stats_runner, kernel_wra
 		}
 
 		n_trajectories_ = sample_size;
+
 		int trajectories_in_batch = std::min(n_trajectories_, trajectory_batch_limit);
 		n_trajectories_ -= trajectories_in_batch;
 
@@ -414,7 +531,7 @@ void simulation_runner::run_simulation(stats_composite& stats_runner, kernel_wra
 
 				// compute statistics over the simulated trajs
 				// restrict to final step, until new upmaboss stats class
-				if (step == steps || true)
+				if (step == steps )
 				{
 					std::cout<<"step " <<step;
 				stats_runner.process_batch(d_traj_states, d_traj_times, d_traj_tr_entropies, d_last_states, d_traj_statuses,
@@ -472,6 +589,7 @@ void simulation_runner::run_simulation(stats_composite& stats_runner, kernel_wra
 
 				// set all batch traj times to 0
 				CUDA_CHECK(cudaMemset(d_traj_times.get(), 0, trajectories_in_batch * trajectory_len_limit * sizeof(float)));
+				
 			}
 
 			if (timer_stats::enable_diags())
@@ -479,9 +597,12 @@ void simulation_runner::run_simulation(stats_composite& stats_runner, kernel_wra
 				std::cerr << "simulation_runner> remaining trajs: " << remaining_trajs << std::endl;
 			}
 		}
-    std::string step_wise_prefix = output_prefix + "Step_" + std::to_string(step);
-		stats_runner.write_csv(sample_size,node_names,step_wise_prefix);
+
+
 	}
+    std::string step_wise_prefix = output_prefix ;//+ "Step_" + std::to_string(step);
+	stats_runner.finalize();
+	stats_runner.write_csv(sample_size,node_names,step_wise_prefix);
 
 	timer_stats stats("simulation_runner> deallocate");
 

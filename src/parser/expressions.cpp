@@ -7,6 +7,11 @@
 
 #include "driver.h"
 #include "../state_word.h"
+#include "set_hash.h"
+#include <set>
+#include <unordered_map>
+
+
 #define DIV_UP(x, y) ((x) + (y)-1) / (y)
 
 
@@ -261,61 +266,21 @@ void external_input_expression::generate_code(const driver &drv,const std::strin
 	os << "external_inputs[" << std::to_string(ext_inp_idx)<<"]";
 }
 
-float external_input_expression::evaluate(const driver& drv, std::vector<state_word_t> last_states ) const
+float external_input_expression::evaluate(const driver& drv, std::unordered_map<std::set<std::pair<std::string, int>>, float, set_hash> p_inputs) const
 {
 	throw std::runtime_error("extenal_inp " + name + "in expression which needs to be evaluated");
 }
 
 
 
-p_expression::p_expression(std::vector<std::string> node_name_list, std::vector<int> state_list) : node_name_list(node_name_list), state_list(state_list)
+p_expression::p_expression(std::set<std::pair<std::string,int>> node_state_pairs) : node_state_pairs(node_state_pairs)
 {
 
 }
 
-float p_expression::evaluate(const driver& drv,std::vector<state_word_t> last_states) const
+float p_expression::evaluate(const driver& drv, std::unordered_map<std::set<std::pair<std::string, int>>, float, set_hash> p_inputs) const
 {
-	//although unchanging for each time evaluate is called, the complexity overhead is negligible. 
-	int state_words = DIV_UP(drv.nodes.size(), 32);
-	float total = 0;
-	std::vector<state_word_t> on_states(state_words,0);
-	std::vector<state_word_t> off_states(state_words,0);
-	for (int i = 0; i< node_name_list.size(); i++)
-	{
-		auto it = std::find_if(drv.nodes.begin(), drv.nodes.end(), [&](auto&& node) { return node.name == node_name_list[i]; });
-		if (it == drv.nodes.end()) {
-			
-		    throw std::runtime_error("unknown node name: ");
-		}
-
-		int node_idx = std::distance(drv.nodes.begin(), it);
-		int word = node_idx / 32;
-		int bit = node_idx % 32;
-		if (state_list[i])
-		{
-			on_states[word] = on_states[word] + std::pow(2,bit);
-		}
-		else
-		{
-			off_states[word] = off_states[word] + std::pow(2,bit);
-		}
-	}
-	//should be 'cells in simulation right now' variable not this
-	//calculate by dividing last_states size by state_words
-	//last_states size steadily increasing
-	float number_of_cells = DIV_UP(last_states.size(),state_words);
-	for (int cell_idx = 0;cell_idx<  number_of_cells; cell_idx++)
-	{ 
-    	std::vector<state_word_t> cell_last_states(last_states.begin() + (cell_idx * state_words),last_states.begin() + (cell_idx * state_words)+state_words);
-		std::vector<state_word_t> on_and(state_words);
-		std::vector<state_word_t> off_and(state_words);
-
-    	std::transform(on_states.begin(), on_states.end(), cell_last_states.begin(), on_and.begin(), std::bit_and<state_word_t>());
-    	std::transform(off_states.begin(), off_states.end(), cell_last_states.begin(), off_and.begin(), std::bit_and<state_word_t>());		
-		bool condition_true_for_sample = std::equal(on_states.begin(), on_states.end(), on_and.begin(), on_and.end()) && (std::accumulate(off_and.begin(), off_and.end(), 0) == 0) ;
-		total = total + condition_true_for_sample;
-	}
-	return total/number_of_cells;
+	return p_inputs[node_state_pairs];
 }
 
 void p_expression::generate_code(const driver& drv, const std::string& current_node, std::ostream& os) const
@@ -331,75 +296,75 @@ float p_expression::evaluate(const driver& drv) const
 
 
 
-float unary_expression::evaluate(const driver& drv, std::vector<state_word_t> last_states ) const
+float unary_expression::evaluate(const driver& drv, std::unordered_map<std::set<std::pair<std::string, int>>, float, set_hash> p_inputs) const
 {
 	switch (op)
 	{
 		case operation::PLUS:
-			return expr->evaluate(drv,last_states);
+			return expr->evaluate(drv,p_inputs);
 		case operation::MINUS:
-			return -expr->evaluate(drv,last_states);
+			return -expr->evaluate(drv,p_inputs);
 		case operation::NOT:
-			return !expr->evaluate(drv,last_states);
+			return !expr->evaluate(drv,p_inputs);
 		default:
 			throw std::runtime_error("Unknown unary operator");
 	}
 }
 
 
-float binary_expression::evaluate(const driver& drv, std::vector<state_word_t> last_states ) const
+float binary_expression::evaluate(const driver& drv, std::unordered_map<std::set<std::pair<std::string, int>>, float, set_hash> p_inputs) const
 {
 	switch (op)
 	{
 		case operation::PLUS:
-			return left->evaluate(drv,last_states) + right->evaluate(drv,last_states);
+			return left->evaluate(drv,p_inputs) + right->evaluate(drv,p_inputs);
 		case operation::MINUS:
-			return left->evaluate(drv,last_states) - right->evaluate(drv,last_states);
+			return left->evaluate(drv,p_inputs) - right->evaluate(drv,p_inputs);
 		case operation::STAR:
-			return left->evaluate(drv,last_states) * right->evaluate(drv,last_states);
+			return left->evaluate(drv,p_inputs) * right->evaluate(drv,p_inputs);
 		case operation::SLASH:
-			return left->evaluate(drv,last_states) / right->evaluate(drv,last_states);
+			return left->evaluate(drv,p_inputs) / right->evaluate(drv,p_inputs);
 		case operation::AND:
-			return left->evaluate(drv,last_states) && right->evaluate(drv,last_states);
+			return left->evaluate(drv,p_inputs) && right->evaluate(drv,p_inputs);
 		case operation::OR:
-			return left->evaluate(drv,last_states) || right->evaluate(drv,last_states);
+			return left->evaluate(drv,p_inputs) || right->evaluate(drv,p_inputs);
 		case operation::EQ:
-			return left->evaluate(drv,last_states) == right->evaluate(drv,last_states);
+			return left->evaluate(drv,p_inputs) == right->evaluate(drv,p_inputs);
 		case operation::NE:
-			return left->evaluate(drv,last_states) != right->evaluate(drv,last_states);
+			return left->evaluate(drv,p_inputs) != right->evaluate(drv,p_inputs);
 		case operation::LE:
-			return left->evaluate(drv,last_states) <= right->evaluate(drv,last_states);
+			return left->evaluate(drv,p_inputs) <= right->evaluate(drv,p_inputs);
 		case operation::LT:
-			return left->evaluate(drv,last_states) < right->evaluate(drv,last_states);
+			return left->evaluate(drv,p_inputs) < right->evaluate(drv,p_inputs);
 		case operation::GE:
-			return left->evaluate(drv,last_states) >= right->evaluate(drv,last_states);
+			return left->evaluate(drv,p_inputs) >= right->evaluate(drv,p_inputs);
 		case operation::GT:
-			return left->evaluate(drv,last_states) > right->evaluate(drv,last_states);
+			return left->evaluate(drv,p_inputs) > right->evaluate(drv,p_inputs);
 		default:
 			throw std::runtime_error("Unknown binary operator " + std::to_string(static_cast<int>(op)));
 	}
 }
 
-float ternary_expression::evaluate(const driver& drv, std::vector<state_word_t> last_states ) const
+float ternary_expression::evaluate(const driver& drv, std::unordered_map<std::set<std::pair<std::string, int>>, float, set_hash> p_inputs) const
 {
-	return left->evaluate(drv,last_states) ? middle->evaluate(drv,last_states) : right->evaluate(drv,last_states);
+	return left->evaluate(drv,p_inputs) ? middle->evaluate(drv,p_inputs) : right->evaluate(drv,p_inputs);
 }
 
 
-float parenthesis_expression::evaluate(const driver& drv, std::vector<state_word_t> last_states ) const { return expr->evaluate(drv,last_states); }
+float parenthesis_expression::evaluate(const driver& drv, std::unordered_map<std::set<std::pair<std::string, int>>, float, set_hash> p_inputs) const { return expr->evaluate(drv,p_inputs); }
 
-float literal_expression::evaluate(const driver&,std::vector<state_word_t> last_states) const { return value; }
+float literal_expression::evaluate(const driver& drv, std::unordered_map<std::set<std::pair<std::string, int>>, float, set_hash> p_inputs) const { return value; }
 
 
-float identifier_expression::evaluate(const driver& drv,std::vector<state_word_t> last_states) const
+float identifier_expression::evaluate(const driver& drv, std::unordered_map<std::set<std::pair<std::string, int>>, float, set_hash> p_inputs) const
 {
 	throw std::runtime_error("identifier " + name + "in expression which needs to be evaluated");
 }
 
-float variable_expression::evaluate(const driver& drv, std::vector<state_word_t> last_states ) const { return drv.variables.at(name); }
+float variable_expression::evaluate(const driver& drv, std::unordered_map<std::set<std::pair<std::string, int>>, float, set_hash> p_inputs) const { return drv.variables.at(name); }
 
 
-float alias_expression::evaluate(const driver& drv,std::vector<state_word_t> last_states) const
+float alias_expression::evaluate(const driver& drv, std::unordered_map<std::set<std::pair<std::string, int>>, float, set_hash> p_inputs) const
 {
 	throw std::runtime_error("alias " + name + "in expression which needs to be evaluated");
 }

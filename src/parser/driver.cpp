@@ -145,5 +145,11 @@ void driver::register_external_input_expression_attribute(ext_inp_t ext_inp,expr
 void driver::register_external_input_expression_attribute(std::string name,expr_ptr expr)
 {
 	throw "register_external_input_expression_attribute not implemented";
+}
 
+
+void driver::register_p_expression(std::set<std::pair<std::string, int>> paired){
+	// throw "currently implementing";
+	p_expressions.insert(paired);
+	return;
 }
