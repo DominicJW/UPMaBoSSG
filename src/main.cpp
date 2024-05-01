@@ -57,7 +57,7 @@ int do_compilation(driver& drv, bool discrete_time, std::optional<kernel_compile
     std::string content = s;
     file << content;
     file.close();
-    std::cout << "File written successfully: " << filename << std::endl;
+    // std::cout << "File written successfully: " << filename << std::endl;
 	std::ifstream read_file("generated/generated_code.cpp");
     std::string fileContents;
     if (read_file) {
@@ -131,8 +131,8 @@ int main(int argc, char** argv)
 
 	std::vector<std::string> args(argv + 1, argv + argc);
 
-
-	std::string output_prefix = "";
+	//output prefix is actually the path to a directory. Directory must exist already
+	std::string output_prefix = "Results";
 	std::string bnd_path = args[0];
 	std::string cfg_path = args[1];
 	std::string upp_path = "NOFILE";

@@ -50,6 +50,14 @@ void final_states_stats::finalize()
 						  cudaMemcpyDeviceToHost));
 }
 
+void final_states_stats::reset()
+{
+	timer_stats stats("final_states_stats> finalize");
+
+	CUDA_CHECK(cudaMemset(occurences_.get(), 0, noninternal_states_count_ * sizeof(int)));
+}
+
+
 void final_states_stats::visualize(int n_trajectories, const std::vector<std::string>& nodes)
 {
 	timer_stats stats("final_states_stats> visualize");

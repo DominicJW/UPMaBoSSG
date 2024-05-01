@@ -17,6 +17,13 @@ void stats_composite::finalize()
 		stat->finalize();
 }
 
+
+void stats_composite::reset()
+{
+	for (auto&& stat : composed_stats_)
+		stat->reset();
+}
+
 void stats_composite::visualize(int n_trajectories, const std::vector<std::string>& nodes)
 {
 	for (auto&& stat : composed_stats_)

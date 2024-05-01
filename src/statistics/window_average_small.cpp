@@ -44,6 +44,22 @@ window_average_small_stats::window_average_small_stats(float window_size, float 
 	}
 }
 
+void window_average_small_stats::reset()
+{
+	//result_probs just the place where the device window_probs gets copied to. overwritten in finalize
+	size_t windows_count = std::ceil(max_time_ / window_size_);
+	if (discrete_time_)
+	{
+		CUDA_CHECK(
+			cudaMemset(window_probs_discrete_.get(), 0, windows_count * noninternal_states_count_ * sizeof(int)));
+	}
+	else
+	{
+	CUDA_CHECK(cudaMemset(window_probs_.get(), 0, windows_count * noninternal_states_count_ * sizeof(float)));
+	}
+}
+
+
 window_average_small_stats::~window_average_small_stats()
 {
 	timer_stats stats("window_average_small> free");

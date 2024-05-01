@@ -23,6 +23,7 @@ public:
 							   thrust::device_ptr<trajectory_status> traj_statuses, int n_trajectories) = 0;
 
 	virtual void finalize() {}
+	virtual void reset () {}
 
 	virtual void visualize(int n_trajectories, const std::vector<std::string>& nodes) = 0;
 	virtual void write_csv(int n_trajectories, const std::vector<std::string>& nodes, const std::string& prefix) = 0;

@@ -113,40 +113,42 @@ class jump_iterator : public thrust::iterator_adaptor<jump_iterator<Iterator>,It
 
 
 
-// __global__ void d_calculate_p_expression(state_word_t* d_last_states, state_word_t* on_states, state_word_t* off_states, int state_words, int* d_sum)
-// {
-// 	auto id = blockIdx.x * blockDim.x + threadIdx.x;
-// 	bool condition = true;
-// 	for (int i = 0;i < state_words_;i++)
-// 	{
-// 		condition &= ((d_last_states[id*state_words_ + i] && on_states[i]) == on_states[i]) && (~d_last_states[id*state_words_ + i] && off_states[i] == off_states);
-// 	}
-// 		//could make more efficent by 
-// 		atomicAdd(d_sum,condition);
-// }
-
-
-
-__global__ void d_calculate_p_expression(state_word_t* d_last_states, state_word_t* on_states, state_word_t* off_states, int state_words, int* d_sum,int max) {
-    extern __shared__ int s_conditions[];
-    auto id = blockIdx.x * blockDim.x + threadIdx.x;
-    if (id >= max)
+__global__ void d_calculate_p_expression(state_word_t* d_last_states, state_word_t* on_states, state_word_t* off_states, int state_words, int* d_sum,int max)
+{
+	auto id = blockIdx.x * blockDim.x + threadIdx.x;
+	if (id >= max)
     	return;
-    bool condition = true;
-    for (int i = 0; i < state_words; i++) {
-        condition &= ((d_last_states[id * state_words + i] && on_states[i]) == on_states[i]) && (~d_last_states[id * state_words + i] && off_states[i] == off_states[i]);
-    }
-    s_conditions[threadIdx.x] = condition;
-    __syncthreads();
-
-    if (threadIdx.x == 0) {
-        int block_sum = 0;
-        for (int i = 0; i < blockDim.x; i++) {
-            block_sum += s_conditions[i];
-        }
-        atomicAdd(d_sum, block_sum);
-    }
+	bool condition = true;
+	//Condition seems to be true always?
+	for (int i = 0;i < state_words;i++)
+	{
+		condition = condition && ((d_last_states[id*state_words + i] & on_states[i]) == on_states[i]) && ((~d_last_states[id*state_words + i] & off_states[i]) == off_states[i]);
+	};
+		atomicAdd(d_sum,condition);
 }
+
+
+//Very broken!
+// __global__ void d_calculate_p_expression(state_word_t* d_last_states, state_word_t* on_states, state_word_t* off_states, int state_words, int* d_sum,int max) {
+//     extern __shared__ int s_conditions[];
+//     auto id = blockIdx.x * blockDim.x + threadIdx.x;
+//     if (id >= max)
+//     	return;
+//     bool condition = true;
+//     for (int i = 0; i < state_words; i++) {
+//         condition &= ((d_last_states[id * state_words + i] && on_states[i]) == on_states[i]) && (~d_last_states[id * state_words + i] && off_states[i] == off_states[i]);
+//     }
+//     s_conditions[threadIdx.x] = condition;
+//     __syncthreads();
+
+//     if (threadIdx.x == 0) {
+//         int block_sum = 0;
+//         for (int i = 0; i < blockDim.x; i++) {
+//             block_sum += s_conditions[i];
+//         }
+//         atomicAdd(d_sum, block_sum);
+//     }
+// }
 	
 int h_calculate_p_expression(thrust::host_vector<state_word_t> saved_states, std::vector<state_word_t> on_states, std::vector<state_word_t> off_states, int state_words)
 {
@@ -304,8 +306,7 @@ void simulation_runner::run_simulation(stats_composite& stats_runner, kernel_wra
 
 	for(int step = 0; step<= steps; step++)
 	{
-
-		if (step > 0 & false)
+		if (step > 0)
 		{
 			
 				std::unordered_map<std::set<std::pair<std::string, int>>, float, set_hash> p_inputs;
@@ -333,6 +334,7 @@ void simulation_runner::run_simulation(stats_composite& stats_runner, kernel_wra
 						{
 							off_states[word] = off_states[word] + (1 << bit);
 						}
+
 					}
 
 					//could put all outside for loop, cuts down on kernel launches, 
@@ -344,21 +346,27 @@ void simulation_runner::run_simulation(stats_composite& stats_runner, kernel_wra
 				  thrust::device_ptr<state_word_t> d_off_states;
 				  d_on_states = thrust::device_malloc<state_word_t>(on_states.size());
 				  d_off_states = thrust::device_malloc<state_word_t>(off_states.size());
+				  cudaMemcpy(d_on_states.get(), on_states.data(), on_states.size() * sizeof(state_word_t), cudaMemcpyHostToDevice);
+				  cudaMemcpy(d_off_states.get(), off_states.data(), off_states.size() * sizeof(state_word_t), cudaMemcpyHostToDevice);
+
+
+
 				  int threadsPerBlock = 256;
 				  int max = std::min(trajectory_batch_limit,sample_size);
     			int numBlocks = (max + threadsPerBlock - 1) / threadsPerBlock;
     			d_calculate_p_expression<<<numBlocks, threadsPerBlock>>>(d_last_states.get(),d_on_states.get(),d_off_states.get(),state_words_,d_sum,max);
-					int sum;
+    			//absolute maximum should be sample size
+					int sum = 0;
 					cudaMemcpy(&sum, d_sum, sizeof(int), cudaMemcpyDeviceToHost);
 					sum += h_calculate_p_expression(saved_states,on_states,off_states,state_words_);
-					p_inputs[paired] = sum/sample_size;
+					p_inputs[paired] = (float)sum/(float)sample_size;
 					//could put all this outside, forloop
 					cudaFree(d_sum);
 				}
 			
 
 
-
+			
 			for (int i = 0; i < drv.external_inputs.size();i++)
 			{
 				external_inputs_host[i] = drv.external_inputs.at(i).expr->evaluate(drv,p_inputs);
@@ -531,9 +539,10 @@ void simulation_runner::run_simulation(stats_composite& stats_runner, kernel_wra
 
 				// compute statistics over the simulated trajs
 				// restrict to final step, until new upmaboss stats class
-				if (step == steps )
+				//Created reset method so fine now.
+				if (step == steps || true)
 				{
-					std::cout<<"step " <<step;
+					// std::cout<<"step " <<step;
 				stats_runner.process_batch(d_traj_states, d_traj_times, d_traj_tr_entropies, d_last_states, d_traj_statuses,
 										   trajectories_in_batch);
 				}
@@ -598,11 +607,16 @@ void simulation_runner::run_simulation(stats_composite& stats_runner, kernel_wra
 			}
 		}
 
-
+		//hello herer
+		std::string step_wise_prefix = output_prefix+"/Step" + std::to_string(step);// 
+		stats_runner.finalize();
+		stats_runner.write_csv(sample_size,node_names,step_wise_prefix);
+		stats_runner.reset();
+		
 	}
-    std::string step_wise_prefix = output_prefix ;//+ "Step_" + std::to_string(step);
-	stats_runner.finalize();
-	stats_runner.write_csv(sample_size,node_names,step_wise_prefix);
+    // std::string step_wise_prefix = output_prefix ;//+ "Step_" + std::to_string(step);
+	// stats_runner.finalize();
+	// stats_runner.write_csv(sample_size,node_names,step_wise_prefix);
 
 	timer_stats stats("simulation_runner> deallocate");
 
