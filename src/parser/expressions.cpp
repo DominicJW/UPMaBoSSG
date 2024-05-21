@@ -198,7 +198,8 @@ identifier_expression::identifier_expression(std::string name) : name(std::move(
 
 float identifier_expression::evaluate(const driver&) const
 {
-	throw std::runtime_error("identifier " + name + "in expression which needs to be evaluated");
+	return 0;
+	// throw std::runtime_error("identifier " + name + " in expression which needs to be evaluated");
 }
 
 void identifier_expression::generate_code(const driver& drv, const std::string&, std::ostream& os) const
@@ -248,6 +249,7 @@ external_input_expression::external_input_expression(std::string name) : name(st
 //not to be called
 float external_input_expression::evaluate(const driver& drv) const
 {
+	return 0;
 	throw std::runtime_error("extenal_inp " + name + "in expression which needs to be evaluated");
 }
 
@@ -268,6 +270,7 @@ void external_input_expression::generate_code(const driver &drv,const std::strin
 
 float external_input_expression::evaluate(const driver& drv, std::unordered_map<std::set<std::pair<std::string, int>>, float, set_hash> p_inputs) const
 {
+	return 0;
 	throw std::runtime_error("extenal_inp " + name + "in expression which needs to be evaluated");
 }
 
